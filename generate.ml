@@ -18,42 +18,23 @@
 open Core.Std
 open Lwt
 
-let make_compiler_spec ~version ~output_dir pull =
+let print_gpr_info pull =
   let open Github_t in
-  let suffix = sprintf "+pr%d" pull.pull_number in
-  let name = version ^ suffix in
-  let descr = pull.pull_title in
-  let subdir = sprintf "%s/compilers/%s/%s/" output_dir version name in
   let source_user = pull.pull_user.user_login in
   let head = pull.pull_head.branch_ref in
-  let source_url =
+  let (source_user, source_repo, source_url) =
     match pull.pull_head.branch_repo with
       Some repo -> 
-        sprintf "https://github.com/%s/archive/%s.tar.gz"
-         repo.repository_full_name head
+        let source_url =
+          sprintf "https://github.com/%s/archive/%s.tar.gz"
+           repo.repository_full_name head
+	in
+        let (a, b) = String.lsplit2_exn repo.repository_full_name ~on:'/' in
+        (a, b, source_url)
     | None ->
-         sprintf "https://github.com/%s/ocaml/archive/%s.tar.gz" source_user head
+        (source_user, "ocaml", sprintf "https://github.com/%s/ocaml/archive/%s.tar.gz" source_user head)
   in
-  printf "Generating: %s\n%!" subdir;
-  Unix.mkdir_p subdir;
-  let open Out_channel in
-  with_file (subdir ^ name ^ ".descr") ~f:(fun t -> output_string t descr);
-  with_file (subdir ^ name ^ ".comp")
-    ~f:(fun t ->
-        [
-          "opam-version: \"1\"";
-          sprintf "version: \"%s\"" version;
-          sprintf "src: \"%s\"" source_url;
-          "build: [";
-          "  [\"./configure\" \"-prefix\" prefix \"-with-debug-runtime\"]";
-          "  [make \"world\"]";
-          "  [make \"world.opt\"]";
-          "  [make \"install\"]";
-          "]";
-          "packages: [ \"base-unix\" \"base-bigarray\" \"base-threads\" ]";
-          "env: [[CAML_LD_LIBRARY_PATH = \"%{lib}%/stublibs\"]]"
-        ] |> output_lines t 
-      )
+  printf "%d %s %s %s %s %s\n%s\n" pull.pull_number source_user source_repo head pull.pull_base.branch_ref source_url pull.pull_title
 
 let auth (token_name : string) = Lwt_main.run (
     Github_cookie_jar.init ()
@@ -64,14 +45,14 @@ let auth (token_name : string) = Lwt_main.run (
                 token_name; exit (-1)
     | Some t -> t)
 
-let get_pulls token user repo version output_dir () =
+let get_pulls token user repo () =
   let open Github in
   let token =
     Option.map ~f:(fun token -> Token.of_string (auth token).Github_t.auth_token) token
   in
   let pulls = Pull.for_repo ?token ~user ~repo ~state:`Open () in
   Lwt_main.run (Monad.run (pulls |> Stream.to_list))
-  |> List.iter ~f:(make_compiler_spec ~version ~output_dir)
+  |> List.iter ~f:print_gpr_info
 
 let _ =
   Command.basic
@@ -81,7 +62,5 @@ let _ =
       +> flag "-k" ~doc:"TOKEN_NAME Name of the token in git-jar" (optional string)
       +> flag "-github-user" (optional_with_default "ocaml" string) ~doc:"string GitHub username"
       +> flag "-github-repo" (optional_with_default "ocaml" string) ~doc:"string GitHub repository"
-      +> flag "-compiler-version" (optional_with_default "4.02.0dev" string) ~doc:"string OCaml compiler version"
-      +> flag "-output-dir" (optional_with_default "." string) ~doc:"string Directory containing the OPAM repository"
     ) get_pulls
   |> Command.run
