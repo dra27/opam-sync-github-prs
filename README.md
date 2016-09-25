@@ -58,6 +58,7 @@ Generates an OPAM compiler remote for active GitHub OCaml PRs
   [-github-repo string]       GitHub repository
   [-github-user string]       GitHub username
   [-output-dir string]        Directory containing the OPAM repository
+  [-k TOKEN_NAME]             Name of the token in git-jar
   [-build-info]               print info about this build and exit
   [-version]                  print the version of this build and exit
   [-help]                     print this help text and exit

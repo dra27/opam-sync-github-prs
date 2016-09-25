@@ -55,9 +55,21 @@ let make_compiler_spec ~version ~output_dir pull =
         ] |> output_lines t 
       )
 
-let get_pulls user repo version output_dir () =
+let auth (token_name : string) = Lwt_main.run (
+    Github_cookie_jar.init ()
+    >>= fun jar ->
+    Github_cookie_jar.get jar ~name:token_name
+    >|= function
+    | None -> eprintf "Use git-jar to create an `%s` token first.\n%!"
+                token_name; exit (-1)
+    | Some t -> t)
+
+let get_pulls token user repo version output_dir () =
   let open Github in
-  let pulls = Pull.for_repo ~user ~repo ~state:`Open () in
+  let token =
+    Option.map ~f:(fun token -> Token.of_string (auth token).Github_t.auth_token) token
+  in
+  let pulls = Pull.for_repo ?token ~user ~repo ~state:`Open () in
   Lwt_main.run (Monad.run (pulls |> Stream.to_list))
   |> List.iter ~f:(make_compiler_spec ~version ~output_dir)
 
@@ -66,6 +78,7 @@ let _ =
     ~summary:"Generates an OPAM compiler remote for active GitHub OCaml PRs"
     Command.Spec.(
       empty
+      +> flag "-k" ~doc:"TOKEN_NAME Name of the token in git-jar" (optional string)
       +> flag "-github-user" (optional_with_default "ocaml" string) ~doc:"string GitHub username"
       +> flag "-github-repo" (optional_with_default "ocaml" string) ~doc:"string GitHub repository"
       +> flag "-compiler-version" (optional_with_default "4.02.0dev" string) ~doc:"string OCaml compiler version"
